@@ -2,17 +2,8 @@
 """ro_probe.py - sonda de protocolo rAthena (login -> char-server), somente diagnostico.
 
 Uso:
-  py -3 ro_probe.py --user teste
-  (a senha e pedida no terminal; ou use a variavel de ambiente RO_PASS)
-
-O que faz:
-  1. Envia CA_LOGIN (0x0064) ao login-server e interpreta a resposta (0x0AC4 / 0x0069 / recusas).
-  2. Mostra a lista de servidores devolvida (IP e porta que o CLIENTE receberia).
-  3. Conecta no char-server indicado, envia CH_ENTER (0x0065) e imprime em hexadecimal
-     tudo o que ele devolve, para a proxima etapa (lista/criacao/selecao de personagem).
-
-Nao cria personagem, nao seleciona e nao entra no mapa. Os offsets seguem o que consta no
-rAthena para PACKETVER >= 20170315; se algo divergir, o dump em hexadecimal mostra a realidade.
+    python ro_probe.py --user testuser
+    (a senha e pedida no terminal; ou use a variavel de ambiente RO_PASS)
 """
 import argparse
 import getpass
@@ -80,7 +71,6 @@ def fazer_login(host, port, user, senha, packetver):
         data = recv_available(s, first_timeout=10.0, idle=1.0)
         if not data:
             print("[login] SEM RESPOSTA em 10s: o servidor aceitou a conexao mas nao respondeu ao pacote.")
-            print("        Rode 'docker logs rathena-login --tail 30' agora e veja se apareceu algo.")
             return None
         print(f"[login] recebidos {len(data)} bytes:")
         hexdump(data[:96])
@@ -88,6 +78,13 @@ def fazer_login(host, port, user, senha, packetver):
         if pid == 0x006A and len(data) >= 3:
             print(f"[login] RECUSADO (0x006A), codigo={data[2]} "
                   "(0 conta inexistente, 1 senha incorreta, 3 rejeitado pelo servidor, 5 versao do cliente)")
+            return None
+        if pid == 0x0081 and len(data) >= 3:
+            motivos = {1: "servidor fechado (nao ha char-server registrado no login)",
+                       2: "ja existe alguem logado com esta conta", 4: "servidor lotado",
+                       8: "o servidor ainda reconhece o ultimo login desta conta"}
+            print(f"[login] CONTA ACEITA, mas conexao negada (0x0081), codigo={data[2]}: "
+                  f"{motivos.get(data[2], 'ver tabela do rAthena')}")
             return None
         if pid == 0x083E:
             print("[login] RECUSADO (0x083E)")
@@ -126,10 +123,12 @@ def sondar_char(info, sv):
     print(f"\n[char] conectando em {sv['ip']}:{sv['porta']}")
     s = socket.create_connection((sv["ip"], sv["porta"]), timeout=5)
     try:
+        # Envio do pacote CH_ENTER (0x0065) com o formato exato esperado pelo rAthena
         pkt = struct.pack("<HIIIHB", 0x0065, info["aid"], info["id1"], info["id2"], 0, info["sexo"])
-        assert len(pkt) == 17
+        assert len(pkt) == 19
         s.sendall(pkt)
-        dados = recv_available(s)
+        # Aguarda a resposta completa do char-server (lista de personagens ou confirmação)
+        dados = recv_available(s, first_timeout=5.0, idle=1.0)
     finally:
         s.close()
     if not dados:
