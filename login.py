@@ -2,8 +2,8 @@
 """ro_probe.py - sonda de protocolo rAthena (login -> char-server), somente diagnostico.
 
 Uso:
-    python ro_probe.py --user testuser
-    (a senha e pedida no terminal; ou use a variavel de ambiente RO_PASS)
+    python login.py --user testuser
+    (a senha é pedida no terminal; ou use a variavel de ambiente RO_PASS)
 """
 import argparse
 import getpass
@@ -123,17 +123,18 @@ def sondar_char(info, sv):
     print(f"\n[char] conectando em {sv['ip']}:{sv['porta']}")
     s = socket.create_connection((sv["ip"], sv["porta"]), timeout=5)
     try:
-        # Envio do pacote CH_ENTER (0x0065) com o formato exato esperado pelo rAthena
-        pkt = struct.pack("<HIIIHB", 0x0065, info["aid"], info["id1"], info["id2"], 0, info["sexo"])
-        assert len(pkt) == 19
+        pkt = struct.pack("<HIIIIB", 0x0065, info["aid"], info["id1"], info["id2"], 0, info["sexo"])
+        assert len(pkt) == 19, f"Tamanho invalido: {len(pkt)} bytes (esperado 19)"
+        
         s.sendall(pkt)
-        # Aguarda a resposta completa do char-server (lista de personagens ou confirmação)
         dados = recv_available(s, first_timeout=5.0, idle=1.0)
     finally:
         s.close()
+        
     if not dados:
         print("[char] o servidor nao respondeu (timeout ou conexao fechada)")
         return
+        
     print(f"[char] recebidos {len(dados)} bytes:")
     hexdump(dados)
     if len(dados) >= 4:
@@ -142,7 +143,7 @@ def sondar_char(info, sv):
     if len(dados) >= 6:
         pid = struct.unpack_from("<H", dados, 4)[0]
         print(f"[char] proximo pacote: id=0x{pid:04X} {NOMES_CHAR.get(pid, '(desconhecido, ver o dump)')}")
-    print("\n[char] copie o bloco acima e envie para a proxima etapa.")
+    print("\n[char] sucesso no handshake com o Char-Server!")
 
 
 def main():
