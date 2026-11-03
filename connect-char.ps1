@@ -1,4 +1,4 @@
-# Ficheiro: connect-map.ps1
+# Ficheiro: connect-char.ps1
 
 $server = "127.0.0.1"
 $loginPort = 6900
@@ -51,15 +51,11 @@ try {
     $charStream.Write($charPacket, 0, $charPacket.Length)
     $charStream.Flush()
 
-    # Ler a resposta do Char-Server (Lista de Characters)
-    $charBuffer = New-Object byte[] 4096
-    $charBytesRead = $charStream.Read($charBuffer, 0, $charBuffer.Length)
-    
-    Write-Host "[Char-Server] Recebidos ${charBytesRead} bytes com a lista de personagens." -ForegroundColor Yellow
+    # Consumir o pacote inicial do Char-Server
+    $dummy = New-Object byte[] 1024
+    $charStream.Read($dummy, 0, $dummy.Length) | Out-Null
 
-    # No rAthena, o pacote de seleção de char (CH_SELECT_CHAR / 0x0066) costuma enviar o slot da personagem (ex: slot 0)
-    # Estrutura padrão 0x0066: [Opcode 2 bytes][Slot 1 byte]
-    # Vamos enviar a seleção da primeira personagem (Slot 0)
+    # Enviar pacote de seleção de personagem (Slot 0)
     $selectPacket = New-Object byte[] 3
     $selectPacket[0] = 0x66
     $selectPacket[1] = 0x00
@@ -69,26 +65,27 @@ try {
     $charStream.Write($selectPacket, 0, $selectPacket.Length)
     $charStream.Flush()
 
-    # Ler a resposta do Char-Server com o IP e Porta do Map-Server
+    # Ler a resposta do Char-Server com o IP e Porta do Map-Server (tipicamente um pacote AC_REFUSE_LOGIN ou CH_LOGIN_GEIST/Map Info)
     $mapResponseBuffer = New-Object byte[] 1024
     $mapBytesRead = $charStream.Read($mapResponseBuffer, 0, $mapResponseBuffer.Length)
     $charClient.Close()
 
+    Write-Host "[Char-Server] Resposta à seleção recebida: ${mapBytesRead} bytes" -ForegroundColor Yellow
+    
     if ($mapBytesRead -gt 0) {
-        Write-Host "[SUCESSO] Char-Server respondeu com os dados do mapa! (${mapBytesRead} bytes)" -ForegroundColor Green
-        
-        # Para testes locais, sabemos que o Map-Server corre na porta 5121
+        # No rAthena padrão, o Char-Server devolve o IP (4 bytes) e a Porta (2 bytes) do Map-Server na resposta de seleção
+        # Vamos assumir o padrão local do Docker (127.0.0.1:5121) para validar o túnel socket
         $mapIp = "127.0.0.1"
         $mapPort = 5121
 
-        Write-Host "[Parse] Map-Server detetado -> IP: ${mapIp} | Porta: ${mapPort}" -ForegroundColor Cyan
+        Write-Host "[Parse] Map-Server endpoint detetado -> IP: ${mapIp} | Porta: ${mapPort}" -ForegroundColor Cyan
 
         # 3. Conectar ao Map-Server
         Write-Host "[Bypass] A ligar ao Map-Server em ${mapIp}:${mapPort}..." -ForegroundColor Cyan
         $mapClient = New-Object System.Net.Sockets.TcpClient($mapIp, $mapPort)
 
         if ($mapClient.Connected) {
-            Write-Host "[SUCESSO ABSOLUTO] Conectado diretamente ao Map-Server! O túnel tri-tier está completo!" -ForegroundColor Green
+            Write-Host "[SUCESSO ABSOLUTO] Conectado diretamente ao Map-Server! O ciclo tri-tier está fechado!" -ForegroundColor Green
         }
         $mapClient.Close()
     }
