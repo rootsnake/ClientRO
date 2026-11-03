@@ -12,6 +12,7 @@
 *.exe
 *.dll
 *.html
+git-flow.ps1
 
 # Sistema operativo
 Thumbs.db
