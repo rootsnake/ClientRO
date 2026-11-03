@@ -11,6 +11,7 @@
 # Binários e executáveis locais gerados
 *.exe
 *.dll
+*.html
 
 # Sistema operativo
 Thumbs.db
